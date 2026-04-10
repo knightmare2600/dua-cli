@@ -65,11 +65,11 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ startsWith(matrix.target, 'x86_64-pc-windows') || startsWith(matrix.target, 'aarch64-pc-windows') && 'nightly' || 'stable' }}
+          toolchain: ${{ contains(matrix.target, 'windows') && 'nightly' || 'stable' }}
           profile: minimal
           override: true
           target: ${{ matrix.target }}
-
+          
       # -------------------------
       # Install cross (only when needed)
       # -------------------------
