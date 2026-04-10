@@ -31,26 +31,34 @@ jobs:
             os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             use_cross: true
+            toolchain: stable
 
           - name: linux-arm64
             os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             use_cross: true
+            toolchain: stable
 
           - name: macos-x64
             os: macos-latest
             target: x86_64-apple-darwin
             use_cross: false
+            toolchain: stable
 
+          # =========================
+          # WINDOWS = NIGHTLY ALWAYS
+          # =========================
           - name: windows-x64
             os: windows-2022
             target: x86_64-pc-windows-msvc
             use_cross: false
+            toolchain: nightly
 
           - name: windows-arm64
             os: windows-2022
             target: aarch64-pc-windows-msvc
             use_cross: false
+            toolchain: nightly
 
     env:
       EXE_NAME: dua
@@ -60,16 +68,15 @@ jobs:
         uses: actions/checkout@v4
 
       # -------------------------
-      # Install Rust toolchain
+      # Install Rust (stable or nightly per matrix)
       # -------------------------
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ contains(matrix.target, 'windows') && 'nightly' || 'stable' }}
-          profile: minimal
-          override: true
-          target: ${{ matrix.target }}
-          
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+          rustup default ${{ matrix.toolchain }}
+          rustup target add ${{ matrix.target }}
+
       # -------------------------
       # Install cross (only when needed)
       # -------------------------
@@ -90,7 +97,7 @@ jobs:
           fi
 
       # -------------------------
-      # Build binary
+      # Build
       # -------------------------
       - name: Build release binary
         shell: bash
@@ -98,15 +105,15 @@ jobs:
           $CARGO build --release --target ${{ matrix.target }}
 
       # -------------------------
-      # Strip binaries (optional)
+      # Strip (unix only)
       # -------------------------
-      - name: Strip binary (unix)
+      - name: Strip binary
         if: runner.os != 'Windows'
         run: |
           strip target/${{ matrix.target }}/release/${{ env.EXE_NAME }} || true
 
       # -------------------------
-      # Prepare archive
+      # Package
       # -------------------------
       - name: Package release
         shell: bash
@@ -131,7 +138,7 @@ jobs:
           fi
 
       # -------------------------
-      # Upload to GitHub Release
+      # Upload release
       # -------------------------
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
