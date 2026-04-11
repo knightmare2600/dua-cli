@@ -24,7 +24,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
   # =========================
   # BUILD ALL BINARIES
   # =========================
@@ -59,13 +58,13 @@ jobs:
             os: windows-2022
             target: x86_64-pc-windows-msvc
             use_cross: false
-            toolchain: nightly
+            toolchain: stable
 
           - name: windows-arm64
             os: windows-2022
             target: aarch64-pc-windows-msvc
             use_cross: false
-            toolchain: nightly
+            toolchain: stable
 
     env:
       EXE_NAME: dua
@@ -85,7 +84,7 @@ jobs:
           rustup target add ${{ matrix.target }}
 
       # -------------------------
-      # cross (only when needed)
+      # cross (only for Linux)
       # -------------------------
       - name: Install cross
         if: matrix.use_cross == true
@@ -106,7 +105,22 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
+          set -e
           $CARGO build --release --target ${{ matrix.target }}
+
+          BIN="target/${{ matrix.target }}/release/${{ env.EXE_NAME }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="$BIN.exe"
+          fi
+
+          echo "Checking for binary at: $BIN"
+
+          if [ ! -f "$BIN" ]; then
+            echo "❌ Binary missing after build"
+            exit 1
+          fi
+
+          echo "✅ Binary exists"
 
       # -------------------------
       # Strip (unix only)
@@ -125,21 +139,34 @@ jobs:
           set -e
 
           VERSION="${GITHUB_REF_NAME}"
-          STAGING="${{ env.EXE_NAME }}-${VERSION}-${{ matrix.target }}"
+          STAGING="${{ env.EXE_NAME }}-${VERSION}-${{ matrix.name }}"
           mkdir -p "$STAGING"
 
+          BIN="target/${{ matrix.target }}/release/${{ env.EXE_NAME }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="$BIN.exe"
+          fi
+
+          cp "$BIN" "$STAGING/"
           cp README.md "$STAGING/" || true
           cp LICENSE "$STAGING/" || true
 
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp target/${{ matrix.target }}/release/${{ env.EXE_NAME }}.exe "$STAGING/"
             7z a "$STAGING.zip" "$STAGING"
             echo "ASSET=$STAGING.zip" >> $GITHUB_ENV
           else
-            cp target/${{ matrix.target }}/release/${{ env.EXE_NAME }} "$STAGING/"
             tar -czf "$STAGING.tar.gz" "$STAGING"
             echo "ASSET=$STAGING.tar.gz" >> $GITHUB_ENV
           fi
+
+      # -------------------------
+      # Upload artifact (DEBUG + sanity)
+      # -------------------------
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.ASSET }}
 
       # -------------------------
       # Upload to release
