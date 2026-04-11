@@ -11,9 +11,7 @@ permissions:
 
 jobs:
 
-  # =========================
-  # CREATE RELEASE (ONCE ONLY)
-  # =========================
+  # ========================= CREATE RELEASE (ONCE ONLY) =========================
   create-release:
     runs-on: ubuntu-latest
     steps:
@@ -24,9 +22,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # =========================
-  # BUILD ALL BINARIES
-  # =========================
+  # ========================= BUILD ALL BINARIES =========================
   build-release:
     runs-on: ${{ matrix.os }}
     needs: create-release
@@ -67,9 +63,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # -------------------------
-      # Rust toolchain
-      # -------------------------
+      # ------------------------- Rust toolchain -------------------------
       - name: Install Rust
         shell: bash
         run: |
@@ -77,9 +71,7 @@ jobs:
           rustup default stable
           rustup target add ${{ matrix.target }}
 
-      # -------------------------
-      # cross (Linux only)
-      # -------------------------
+      # ------------------------- cross (Linux only) -------------------------
       - name: Install cross
         if: matrix.use_cross == true
         run: cargo install cross --locked
@@ -93,9 +85,7 @@ jobs:
             echo "CARGO=cargo" >> $GITHUB_ENV
           fi
 
-      # -------------------------
-      # Build
-      # -------------------------
+      # ------------------------- Build -------------------------
       - name: Build
         shell: bash
         run: |
@@ -116,17 +106,13 @@ jobs:
 
           echo "✅ Binary exists"
 
-      # -------------------------
-      # Strip (non-Windows)
-      # -------------------------
+      # ------------------------- Strip (non-Windows) -------------------------
       - name: Strip binary
         if: runner.os != 'Windows'
         run: |
           strip target/${{ matrix.target }}/release/${{ env.EXE_NAME }} || true
 
-      # -------------------------
-      # cargo-diet (Linux only, non-fatal)
-      # -------------------------
+      # ------------------------- cargo-diet (Linux only, non-fatal) -------------------------
       - name: Install cargo-diet
         if: matrix.os == 'ubuntu-latest'
         shell: bash
@@ -140,9 +126,7 @@ jobs:
         run: |
           cargo diet -n || true
 
-      # -------------------------
-      # Package
-      # -------------------------
+      # ------------------------- Package -------------------------
       - name: Package
         shell: bash
         run: |
@@ -169,18 +153,14 @@ jobs:
             echo "ASSET=$NAME.tar.gz" >> $GITHUB_ENV
           fi
 
-      # -------------------------
-      # Upload artifact (always)
-      # -------------------------
+      # ------------------------- Upload artifact (always) -------------------------
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: ${{ env.ASSET }}
 
-      # -------------------------
-      # Upload to GitHub Release
-      # -------------------------
+      # ------------------------- Upload to GitHub Release -------------------------
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
