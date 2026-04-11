@@ -8,6 +8,10 @@
 #                       is always x86_64-linux regardless of build target);
 #                       add windows-arm64 and linux-arm64 matrix entries;
 #                       use actions/checkout@v4 and softprops/action-gh-release@v2.
+#   v1.1.0  2026-04-11  Add workflow_dispatch input for version (e.g. v0.1.0);
+#                       create-release job now creates the git tag when triggered
+#                       manually so no local git commands are needed — just click
+#                       Actions > release > Run workflow, enter the version, done.
 # =============================================================================
 
 name: release
@@ -17,21 +21,68 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. v0.1.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
 
-  # ========================= CREATE RELEASE (ONCE ONLY) =========================
+  # ========================= CREATE TAG + RELEASE (ONCE ONLY) =========================
   create-release:
     runs-on: ubuntu-latest
 
+    outputs:
+      tag: ${{ steps.resolve-tag.outputs.tag }}
+
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag name
+        id: resolve-tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+
+          # Ensure it starts with v
+          if [[ "$TAG" != v* ]]; then
+            echo "❌ Version must start with 'v' (got: $TAG)"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Resolved tag: $TAG"
+
+      - name: Create and push git tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          TAG="${{ steps.resolve-tag.outputs.tag }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "❌ Tag $TAG already exists on remote — pick a different version"
+            exit 1
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "✅ Tag $TAG created and pushed"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.resolve-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -39,6 +90,10 @@ jobs:
   build-release:
     runs-on: ${{ matrix.os }}
     needs: create-release
+
+    env:
+      TAG: ${{ needs.create-release.outputs.tag }}
+      EXE_NAME: dua
 
     strategy:
       fail-fast: false
@@ -69,9 +124,6 @@ jobs:
             os: windows-2022
             target: aarch64-pc-windows-msvc
             use_cross: false
-
-    env:
-      EXE_NAME: dua
 
     steps:
       - name: Checkout
@@ -150,7 +202,7 @@ jobs:
         run: |
           set -e
 
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${TAG}"
           NAME="${{ env.EXE_NAME }}-${VERSION}-${{ matrix.name }}"
           mkdir -p "$NAME"
 
@@ -182,6 +234,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
           files: ${{ env.ASSET }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
