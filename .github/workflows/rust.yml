@@ -1,3 +1,13 @@
+# =============================================================================
+# rust.yml — CI: test, fmt, clippy, diet (runs on every push/PR to main)
+# =============================================================================
+# Version history:
+#   v1.0.0  2026-04-11  Initial rewrite: drop deprecated actions-rs/* and
+#                       Swatinem/rust-cache@v1; add windows-arm64 check job;
+#                       bump all actions to Node.js 24-compatible versions;
+#                       set cargo-diet limit to 1024 KB.
+# =============================================================================
+
 name: Rust
 
 on:
@@ -7,48 +17,86 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
 
+  # ========================= LINUX: test / fmt / clippy / diet =========================
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: Swatinem/rust-cache@v1
-    - name: Test compilation
-      run: make check
-    - name: Run tests
-      run: make unit-tests
-    - name: fmt
-      run: cargo fmt --all -- --check
-    - name: clippy
-      run: cargo clippy -- -D warnings
-    - name: Check crate package size (feat. 'cargo diet')
-      continue-on-error: true
-      run: |
-        curl -LSfs https://raw.githubusercontent.com/the-lean-crate/cargo-diet/master/ci/install.sh | \
-         sh -s -- --git the-lean-crate/cargo-diet --target x86_64-unknown-linux-musl --tag v1.2.4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        cargo diet -n --package-size-limit 512KB
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
 
-  build-and-test-on-windows:
-    name: Windows (nightly)
-    runs-on: windows-latest
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test compilation
+        run: make check
+
+      - name: Run unit tests
+        run: make unit-tests
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy -- -D warnings
+
+      - name: Install cargo-diet
+        continue-on-error: true
+        run: |
+          curl -LSfs https://raw.githubusercontent.com/the-lean-crate/cargo-diet/master/ci/install.sh | \
+          sh -s -- --git the-lean-crate/cargo-diet --target x86_64-unknown-linux-musl --tag v1.2.4
+
+      - name: Check crate package size (cargo-diet, max 1024 KB)
+        continue-on-error: true
+        run: cargo diet -n --package-size-limit 1024KB
+
+  # ========================= WINDOWS x64: nightly check + test =========================
+  build-and-test-windows-x64:
+    name: Windows x64 (nightly)
+    runs-on: windows-2022
+
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: default
-          toolchain: nightly
-          override: true
-      - uses: Swatinem/rust-cache@v1
-      - name: "Check (crossterm)"
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all --bins --tests --examples
-      - name: "Test (crossterm)"
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Install Rust nightly (x86_64)
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check (crossterm, x64)
+        run: cargo check --all --bins --tests --examples
+
+      - name: Test (crossterm, x64)
+        run: cargo test --all
+
+  # ========================= WINDOWS arm64: nightly check =========================
+  build-and-test-windows-arm64:
+    name: Windows arm64 (nightly)
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly + arm64 target
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+          rustup target add aarch64-pc-windows-msvc
+
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check (crossterm, arm64)
+        run: cargo check --all --bins --tests --examples --target aarch64-pc-windows-msvc
