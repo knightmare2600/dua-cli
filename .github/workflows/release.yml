@@ -28,7 +28,6 @@ jobs:
   # BUILD ALL BINARIES
   # =========================
   build-release:
-    name: build-release
     runs-on: ${{ matrix.os }}
     needs: create-release
 
@@ -40,31 +39,26 @@ jobs:
             os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             use_cross: true
-            toolchain: stable
 
           - name: linux-arm64
             os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             use_cross: true
-            toolchain: stable
 
           - name: macos-x64
             os: macos-latest
             target: x86_64-apple-darwin
             use_cross: false
-            toolchain: stable
 
           - name: windows-x64
             os: windows-2022
             target: x86_64-pc-windows-msvc
             use_cross: false
-            toolchain: stable
 
           - name: windows-arm64
             os: windows-2022
             target: aarch64-pc-windows-msvc
             use_cross: false
-            toolchain: stable
 
     env:
       EXE_NAME: dua
@@ -76,21 +70,21 @@ jobs:
       # -------------------------
       # Rust toolchain
       # -------------------------
-      - name: Install Rust toolchain
+      - name: Install Rust
         shell: bash
         run: |
-          rustup toolchain install ${{ matrix.toolchain }} --profile minimal
-          rustup default ${{ matrix.toolchain }}
+          rustup toolchain install stable --profile minimal
+          rustup default stable
           rustup target add ${{ matrix.target }}
 
       # -------------------------
-      # cross (only for Linux)
+      # cross (Linux only)
       # -------------------------
       - name: Install cross
         if: matrix.use_cross == true
         run: cargo install cross --locked
 
-      - name: Configure build command
+      - name: Select build tool
         shell: bash
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
@@ -102,7 +96,7 @@ jobs:
       # -------------------------
       # Build
       # -------------------------
-      - name: Build release binary
+      - name: Build
         shell: bash
         run: |
           set -e
@@ -116,14 +110,14 @@ jobs:
           echo "Checking for binary at: $BIN"
 
           if [ ! -f "$BIN" ]; then
-            echo "❌ Binary missing after build"
+            echo "❌ Binary missing"
             exit 1
           fi
 
           echo "✅ Binary exists"
 
       # -------------------------
-      # Strip (unix only)
+      # Strip (non-Windows)
       # -------------------------
       - name: Strip binary
         if: runner.os != 'Windows'
@@ -131,36 +125,52 @@ jobs:
           strip target/${{ matrix.target }}/release/${{ env.EXE_NAME }} || true
 
       # -------------------------
+      # cargo-diet (Linux only, non-fatal)
+      # -------------------------
+      - name: Install cargo-diet
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          curl -LSfs https://raw.githubusercontent.com/the-lean-crate/cargo-diet/master/ci/install.sh | \
+          sh -s -- --git the-lean-crate/cargo-diet --target x86_64-unknown-linux-musl --tag v1.2.4
+
+      - name: Check crate size
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          cargo diet -n || true
+
+      # -------------------------
       # Package
       # -------------------------
-      - name: Package release
+      - name: Package
         shell: bash
         run: |
           set -e
 
           VERSION="${GITHUB_REF_NAME}"
-          STAGING="${{ env.EXE_NAME }}-${VERSION}-${{ matrix.name }}"
-          mkdir -p "$STAGING"
+          NAME="${{ env.EXE_NAME }}-${VERSION}-${{ matrix.name }}"
+          mkdir -p "$NAME"
 
           BIN="target/${{ matrix.target }}/release/${{ env.EXE_NAME }}"
           if [ "${{ runner.os }}" = "Windows" ]; then
             BIN="$BIN.exe"
           fi
 
-          cp "$BIN" "$STAGING/"
-          cp README.md "$STAGING/" || true
-          cp LICENSE "$STAGING/" || true
+          cp "$BIN" "$NAME/"
+          cp README.md "$NAME/" || true
+          cp LICENSE "$NAME/" || true
 
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$STAGING.zip" "$STAGING"
-            echo "ASSET=$STAGING.zip" >> $GITHUB_ENV
+            7z a "$NAME.zip" "$NAME"
+            echo "ASSET=$NAME.zip" >> $GITHUB_ENV
           else
-            tar -czf "$STAGING.tar.gz" "$STAGING"
-            echo "ASSET=$STAGING.tar.gz" >> $GITHUB_ENV
+            tar -czf "$NAME.tar.gz" "$NAME"
+            echo "ASSET=$NAME.tar.gz" >> $GITHUB_ENV
           fi
 
       # -------------------------
-      # Upload artifact (DEBUG + sanity)
+      # Upload artifact (always)
       # -------------------------
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -169,7 +179,7 @@ jobs:
           path: ${{ env.ASSET }}
 
       # -------------------------
-      # Upload to release
+      # Upload to GitHub Release
       # -------------------------
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
